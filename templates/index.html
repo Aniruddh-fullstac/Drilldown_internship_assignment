@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Tart Verification System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .hidden { display: none; }
+        .preview-image { 
+            max-width: 300px; 
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .mode-indicator {
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        .admin-mode {
+            background-color: #e3f2fd;
+            color: #1565c0;
+        }
+        .user-mode {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+        }
+        .option-buttons .btn {
+            margin: 0 10px;
+            padding: 15px 30px;
+            font-size: 1.1em;
+        }
+        .selected-option {
+            background-color: #1565c0 !important;
+            color: white !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <!-- Mode Indicator -->
+        <div class="mode-indicator admin-mode" id="modeIndicator">
+            ADMIN MODE
+        </div>
+
+        <!-- Mode Toggle -->
+        <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" id="userTypeToggle">
+            <label class="form-check-label" for="userTypeToggle" id="userTypeLabel">
+                Switch to User Mode
+            </label>
+        </div>
+
+        <!-- Main Options -->
+        <div class="option-buttons text-center mb-4">
+            <button class="btn btn-outline-primary" onclick="selectOption('shelf1')" id="shelf1Btn">Shelf 1</button>
+            <button class="btn btn-outline-primary" onclick="selectOption('shelf2')" id="shelf2Btn">Shelf 2</button>
+            <button class="btn btn-outline-primary" onclick="selectOption('tartlet')" id="tartletBtn">Tartlet Identifier</button>
+        </div>
+
+        <!-- Admin Section -->
+        <div id="adminSection" class="hidden">
+            <div class="text-center mb-4">
+                <button class="btn btn-primary me-3" onclick="showAdminFileUpload()">Upload Image</button>
+                <button class="btn btn-primary" onclick="startAdminCamera()">Use Camera</button>
+            </div>
+            
+            <!-- Admin File Upload -->
+            <div id="adminFileUpload" class="hidden mb-4 text-center">
+                <input type="file" class="form-control" id="adminImageInput" accept="image/*" onchange="handleAdminImageUpload(event)">
+            </div>
+            
+            <!-- Admin Camera Feed -->
+            <div id="adminCameraSection" class="hidden mb-4 text-center">
+                <video id="adminCameraFeed" class="camera-feed" autoplay></video>
+                <button class="btn btn-primary mt-3" onclick="captureAdminImage()">Capture</button>
+            </div>
+            
+            <!-- Admin Preview -->
+            <div id="adminPreviewSection" class="text-center mb-4">
+                <h4>Reference Image Preview</h4>
+                <img id="adminPreview" class="preview-image mb-3">
+                <div>
+                    <button id="submitAdminImage" class="btn btn-success mt-3" onclick="submitAdminImage()" style="display: none;">
+                        Set as Reference Image
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- User Section -->
+        <div id="userSection" class="hidden">
+            <div class="text-center mb-4">
+                <button class="btn btn-primary me-3" onclick="showUserFileUpload()">Upload Image</button>
+                <button class="btn btn-primary" onclick="startUserCamera()">Use Camera</button>
+            </div>
+            
+            <!-- User File Upload -->
+            <div id="userFileUpload" class="hidden mb-4 text-center">
+                <input type="file" class="form-control" id="userImageInput" accept="image/*" onchange="handleUserImageUpload(event)">
+            </div>
+            
+            <!-- User Camera Feed -->
+            <div id="userCameraSection" class="hidden mb-4 text-center">
+                <video id="userCameraFeed" class="camera-feed" autoplay></video>
+                <button class="btn btn-primary mt-3" onclick="captureUserImage()">Capture</button>
+            </div>
+            
+            <!-- User Preview -->
+            <div id="userPreviewSection" class="text-center mb-4">
+                <h4>Image Preview</h4>
+                <img id="userPreview" class="preview-image mb-3">
+                <div>
+                    <button id="submitUserImage" class="btn btn-success mt-3" onclick="submitUserImage()" style="display: none;">
+                        Verify Arrangement
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Result Section -->
+            <div id="resultSection" class="mt-4 hidden text-center">
+                <h4>Comparison Result</h4>
+                <img id="resultImage" class="preview-image mt-3">
+                <div id="resultText" class="mt-3"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isAdminMode = true;
+        let currentOption = null;
+        let adminImageSet = false;
+        let stream = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            updateModeIndicator();
+            checkAdminImageStatus();
+        });
+
+        // Mode toggle handler
+        document.getElementById('userTypeToggle').addEventListener('change', function() {
+            if (isAdminMode && !adminImageSet) {
+                alert('Please set admin image first');
+                this.checked = false;
+                return;
+            }
+            
+            isAdminMode = !this.checked;
+            updateModeIndicator();
+            
+            if (!isAdminMode) {
+                this.disabled = true;
+            }
+            
+            // Update visible sections
+            updateSections();
+        });
+
+        function updateModeIndicator() {
+            const modeIndicator = document.getElementById('modeIndicator');
+            const userTypeLabel = document.getElementById('userTypeLabel');
+            
+            if (isAdminMode) {
+                modeIndicator.textContent = 'ADMIN MODE';
+                modeIndicator.classList.remove('user-mode');
+                modeIndicator.classList.add('admin-mode');
+                userTypeLabel.textContent = 'Switch to User Mode';
+            } else {
+                modeIndicator.textContent = 'USER MODE';
+                modeIndicator.classList.remove('admin-mode');
+                modeIndicator.classList.add('user-mode');
+                userTypeLabel.textContent = 'User Mode (Locked)';
+            }
+        }
+
+        function selectOption(option) {
+            document.querySelectorAll('.option-buttons .btn').forEach(btn => {
+                btn.classList.remove('selected-option');
+            });
+            
+            if (currentOption === option) {
+                currentOption = null;
+                updateSections();
+                return;
+            }
+            
+            currentOption = option;
+            document.getElementById(`${option}Btn`).classList.add('selected-option');
+            updateSections();
+        }
+
+        function updateSections() {
+            const adminSection = document.getElementById('adminSection');
+            const userSection = document.getElementById('userSection');
+            
+            adminSection.classList.add('hidden');
+            userSection.classList.add('hidden');
+            
+            if (currentOption === 'tartlet') {
+                if (isAdminMode) {
+                    adminSection.classList.remove('hidden');
+                } else {
+                    userSection.classList.remove('hidden');
+                }
+            }
+        }
+
+        // Keep all your existing functions here
+        // (handleImageUpload, submitAdminImage, submitUserImage, displayResults, etc.)
+        
+        // Your existing functions from before...
+
+        function showAdminFileUpload() {
+            if (!isAdminMode) {
+                alert('Please switch to admin mode first');
+                return;
+            }
+            document.getElementById('adminFileUpload').classList.remove('hidden');
+            document.getElementById('adminCameraSection').classList.add('hidden');
+            stopCamera();
+        }
+
+        function startAdminCamera() {
+            if (!isAdminMode) {
+                alert('Please switch to admin mode first');
+                return;
+            }
+            document.getElementById('adminFileUpload').classList.add('hidden');
+            startCamera('adminCameraFeed');
+            document.getElementById('adminCameraSection').classList.remove('hidden');
+        }
+
+        async function handleAdminImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // Show preview immediately
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('adminPreview').src = e.target.result;
+                document.getElementById('submitAdminImage').style.display = 'inline-block';
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function submitAdminImage() {
+            if (confirm('Are you sure you want to set this as the reference image?')) {
+                const adminPreview = document.getElementById('adminPreview');
+                if (!adminPreview.src || adminPreview.src === '') {
+                    alert('Please select or capture an image first');
+                    return;
+                }
+
+                // Get the file from the input
+                const fileInput = document.getElementById('adminImageInput');
+                const file = fileInput.files[0];
+                
+                if (!file) {
+                    alert('Please select a file first');
+                    return;
+                }
+
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('userType', 'admin');
+
+                try {
+                    const response = await fetch('/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const result = await response.json();
+                    
+                    if (result.error) {
+                        throw new Error(result.error);
+                    }
+
+                    if (result.adminImageSet) {
+                        adminImageSet = true;
+                        alert('Reference image set successfully! You can now switch to user mode.');
+                        document.getElementById('userTypeToggle').disabled = false;
+                    }
+
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('Error: ' + (error.message || 'Failed to set reference image'));
+                }
+            }
+        }
+
+        // Update camera functions to handle both admin and user modes
+        function startCamera(videoElementId) {
+            if (stream) {
+                stopCamera();
+            }
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(function(mediaStream) {
+                    stream = mediaStream;
+                    const video = document.getElementById(videoElementId);
+                    video.srcObject = mediaStream;
+                })
+                .catch(function(err) {
+                    console.error('Error accessing camera:', err);
+                    alert('Could not access camera');
+                });
+        }
+
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+        }
+
+        function captureAdminImage() {
+            if (!stream) return;
+            
+            const video = document.getElementById('adminCameraFeed');
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            const context = canvas.getContext('2d');
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Convert to blob and create file
+            canvas.toBlob(function(blob) {
+                const file = new File([blob], "camera-capture.jpg", { type: "image/jpeg" });
+                
+                // Create a new FileList containing the File object
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                
+                // Set the file input's files
+                document.getElementById('adminImageInput').files = dataTransfer.files;
+                
+                // Show preview
+                document.getElementById('adminPreview').src = canvas.toDataURL('image/jpeg');
+                document.getElementById('submitAdminImage').style.display = 'inline-block';
+            }, 'image/jpeg');
+            
+            stopCamera();
+            document.getElementById('adminCameraSection').classList.add('hidden');
+        }
+
+        function showUserFileUpload() {
+            if (isAdminMode) {
+                alert('Please switch to user mode first');
+                return;
+            }
+            document.getElementById('userFileUpload').classList.remove('hidden');
+            document.getElementById('userCameraSection').classList.add('hidden');
+            stopCamera();
+        }
+
+        function startUserCamera() {
+            if (isAdminMode) {
+                alert('Please switch to user mode first');
+                return;
+            }
+            document.getElementById('userFileUpload').classList.add('hidden');
+            startCamera('userCameraFeed');
+            document.getElementById('userCameraSection').classList.remove('hidden');
+        }
+
+        async function handleUserImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // Show preview immediately
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('userPreview').src = e.target.result;
+                document.getElementById('submitUserImage').style.display = 'inline-block';
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function submitUserImage() {
+            if (confirm('Are you sure you want to verify this arrangement?')) {
+                const userPreview = document.getElementById('userPreview');
+                if (!userPreview.src || userPreview.src === '') {
+                    alert('Please select or capture an image first');
+                    return;
+                }
+
+                const fileInput = document.getElementById('userImageInput');
+                const file = fileInput.files[0];
+                
+                if (!file) {
+                    alert('Please select a file first');
+                    return;
+                }
+
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('userType', 'user');
+
+                try {
+                    const response = await fetch('/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || 'Failed to process image');
+                    }
+
+                    const result = await response.json();
+                    
+                    if (result.error) {
+                        throw new Error(result.error);
+                    }
+
+                    // Redirect to result page with parameters
+                    const params = new URLSearchParams({
+                        all_match: result.all_match,
+                        position_matches: result.position_matches.join(',')
+                    });
+                    window.location.href = `/result?${params.toString()}`;
+
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('Error: ' + (error.message || 'Failed to process image'));
+                }
+            }
+        }
+
+        function captureUserImage() {
+            if (!stream) return;
+            
+            const video = document.getElementById('userCameraFeed');
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            const context = canvas.getContext('2d');
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Convert to blob and create file
+            canvas.toBlob(function(blob) {
+                const file = new File([blob], "camera-capture.jpg", { type: "image/jpeg" });
+                
+                // Create a new FileList containing the File object
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                
+                // Set the file input's files
+                document.getElementById('userImageInput').files = dataTransfer.files;
+                
+                // Show preview
+                document.getElementById('userPreview').src = canvas.toDataURL('image/jpeg');
+                document.getElementById('submitUserImage').style.display = 'inline-block';
+            }, 'image/jpeg');
+            
+            stopCamera();
+            document.getElementById('userCameraSection').classList.add('hidden');
+        }
+
+        function displayResults(result) {
+            const resultSection = document.getElementById('resultSection');
+            const resultText = document.getElementById('resultText');
+            
+            resultSection.classList.remove('hidden');
+            
+            if (result.error) {
+                resultText.innerHTML = `
+                    <div class="alert alert-danger">
+                        ${result.error}
+                    </div>
+                `;
+                return;
+            }
+            
+            // Create result layout with side-by-side images
+            resultSection.innerHTML = `
+                <h4 class="mb-4">Comparison Result</h4>
+                <div class="row">
+                    <div class="col-md-6 text-center">
+                        <h5>Reference Image</h5>
+                        <img src="uploads/admin_image.jpg" alt="Reference Image">
+                    </div>
+                    <div class="col-md-6 text-center">
+                        <h5>Comparison Result</h5>
+                        <img src="tart_comparison_result.jpg" alt="Result Image">
+                    </div>
+                </div>
+                <div class="mt-4" id="resultDetails">
+                    <div class="alert ${result.all_match ? 'alert-success' : 'alert-danger'} text-center">
+                        ${result.all_match ? 'All positions match! ✓' : 'Mismatches found ✗'}
+                    </div>
+                    ${result.position_matches ? `
+                        <div class="mt-3">
+                            <h5 class="text-center">Position Details:</h5>
+                            <div class="list-group">
+                                ${result.position_matches.map((match, index) => `
+                                    <div class="list-group-item ${match ? 'list-group-item-success' : 'list-group-item-danger'} 
+                                              d-flex justify-content-between align-items-center">
+                                        <span>Position ${index + 1}</span>
+                                        <span>${match ? '✓' : '✗'}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+
+            // Add CSS for the images
+            const style = document.createElement('style');
+            style.textContent = `
+                .preview-image {
+                    max-width: 100%;
+                    height: auto;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+                    margin: 10px;
+                }
+                .row {
+                    margin: 0 -15px;
+                }
+                .col-md-6 {
+                    padding: 15px;
+                }
+                @media (max-width: 768px) {
+                    .col-md-6 {
+                        margin-bottom: 20px;
+                    }
+                }
+            `;
+            document.head.appendChild(style);
+
+            // Error handling for images
+            const referenceImage = document.getElementById('referenceImage');
+            const resultImage = document.getElementById('resultImage');
+
+            referenceImage.onerror = function() {
+                this.parentElement.innerHTML += `
+                    <div class="alert alert-warning mt-2">
+                        Failed to load reference image
+                    </div>
+                `;
+            };
+
+            resultImage.onerror = function() {
+                this.parentElement.innerHTML += `
+                    <div class="alert alert-warning mt-2">
+                        Failed to load comparison result
+                    </div>
+                `;
+            };
+
+            // Scroll to results
+            resultSection.scrollIntoView({ behavior: 'smooth' });
+        }
+    </script>
+</body>
+</html> 
